@@ -132,9 +132,14 @@
                 const data = await response.json();
                 if (data.success) {
                     sessionId = data.sessionId;
+                } else {
+                    showStatus('Error: ' + (data.error || 'Failed to initialize authentication'), 'error');
+                    if (data.error && data.error.includes('TELEGRAM_API')) {
+                        showStatus('Please add TELEGRAM_API_ID and TELEGRAM_API_HASH to your .env file. Get them from https://my.telegram.org/apps', 'error');
+                    }
                 }
             } catch (error) {
-                showStatus('Failed to initialize authentication', 'error');
+                showStatus('Failed to initialize authentication: ' + error.message, 'error');
             }
         }
 
@@ -163,9 +168,13 @@
 
                 if (data.success) {
                     showStep('code');
-                    showStatus('Code sent! Check your Telegram.', 'success');
+                    showStatus('Code sent! Check your Telegram app for the verification code.', 'success');
                 } else {
-                    showStatus('Error: ' + data.error, 'error');
+                    const errorMsg = data.error || 'Failed to send code';
+                    showStatus('Error: ' + errorMsg, 'error');
+                    if (errorMsg.includes('TELEGRAM_API') || errorMsg.includes('API ID')) {
+                        showStatus('Please add TELEGRAM_API_ID and TELEGRAM_API_HASH to your .env file and restart the server.', 'error');
+                    }
                     btn.disabled = false;
                 }
             } catch (error) {

@@ -14,11 +14,27 @@ export class TelegramPortfolioClient {
     const session = new StringSession(sessionString);
     this.client = new TelegramClient(session, apiId, apiHash, {
       connectionRetries: 5,
+      requestRetries: 5,
+      floodSleepThreshold: 60,
+      retryDelay: 2000,
     });
     this.targetBotUsername = targetBotUsername;
   }
 
   async connect(): Promise<void> {
+    // Check if already connected
+    if (this.client.connected) {
+      try {
+        // Verify authorization is still valid
+        if (await this.client.checkAuthorization()) {
+          return; // Already connected and authorized
+        }
+      } catch (error) {
+        // Connection might be stale, reconnect
+        console.log('[TELEGRAM] Connection stale, reconnecting...');
+      }
+    }
+    
     await this.client.connect();
     
     if (!(await this.client.checkAuthorization())) {
@@ -26,7 +42,25 @@ export class TelegramPortfolioClient {
     }
   }
 
+  async ensureConnected(): Promise<void> {
+    try {
+      // Check if connected and authorized
+      if (this.client.connected && await this.client.checkAuthorization()) {
+        return; // Already connected
+      }
+    } catch (error) {
+      // Not connected or not authorized, reconnect
+      console.log('[TELEGRAM] Reconnecting...');
+    }
+    
+    // Reconnect
+    await this.connect();
+  }
+
   async sendPositionsCommand(): Promise<string> {
+    // Ensure we're connected before sending commands
+    await this.ensureConnected();
+    
     try {
       // Get the bot entity
       const entity = await this.client.getEntity(this.targetBotUsername);
@@ -92,7 +126,17 @@ export class TelegramPortfolioClient {
 
       throw new Error('Timeout waiting for bot response');
     } catch (error) {
+      // Log the error for debugging
+      console.error('[TELEGRAM] Error in sendPositionsCommand:', error);
       throw new Error(`Failed to get positions: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async checkConnection(): Promise<boolean> {
+    try {
+      return !!this.client.connected && await this.client.checkAuthorization();
+    } catch {
+      return false;
     }
   }
 
@@ -101,6 +145,9 @@ export class TelegramPortfolioClient {
   }
 
   async fetchHistoricalMessages(limit: number = 2000): Promise<Array<{ message: string; date: Date; id: number }>> {
+    // Ensure we're connected before fetching
+    await this.ensureConnected();
+    
     try {
       const entity = await this.client.getEntity(this.targetBotUsername);
       const messages = await this.client.getMessages(entity, { limit });

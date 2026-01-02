@@ -17,14 +17,47 @@ interface AuthSession {
   };
   startPromise?: Promise<void>;
   authError?: Error;
+  createdAt: number;
 }
+
+// Session timeout: 10 minutes
+const AUTH_SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 
 const authSessions = new Map<string, AuthSession>();
 
+// Cleanup stale auth sessions periodically
+function cleanupStaleSessions(): void {
+  const now = Date.now();
+  for (const [sessionId, session] of authSessions.entries()) {
+    if (now - session.createdAt > AUTH_SESSION_TIMEOUT_MS) {
+      console.log(`[AUTH] Cleaning up stale session: ${sessionId}`);
+      session.client.disconnect().catch(() => {});
+      authSessions.delete(sessionId);
+    }
+  }
+}
+
+// Run cleanup every 2 minutes
+setInterval(cleanupStaleSessions, 2 * 60 * 1000);
+
 export function createAuthSession(sessionId: string, apiId: number, apiHash: string): void {
+  // Validate API credentials - check before creating client
+  if (!apiId || apiId === 0) {
+    throw new Error('TELEGRAM_API_ID is missing or invalid. Please add it to your .env file. Get it from https://my.telegram.org/apps');
+  }
+  
+  if (!apiHash || typeof apiHash !== 'string' || apiHash.trim() === '') {
+    throw new Error('TELEGRAM_API_HASH is missing or invalid. Please add it to your .env file. Get it from https://my.telegram.org/apps');
+  }
+  
+  console.log('[AUTH] Creating TelegramClient with API_ID:', apiId, 'API_HASH:', apiHash.substring(0, 4) + '...');
+  
   const session = new StringSession('');
   const client = new TelegramClient(session, apiId, apiHash, {
     connectionRetries: 5,
+    requestRetries: 5,
+    floodSleepThreshold: 60,
+    retryDelay: 2000,
   });
 
   const handlers: AuthSession['handlers'] = {};
@@ -54,30 +87,32 @@ export function createAuthSession(sessionId: string, apiId: number, apiHash: str
     step: 'phone',
     handlers,
     resolvers,
+    createdAt: Date.now(),
   });
 }
 
 export async function submitPhoneNumber(sessionId: string, phoneNumber: string): Promise<{ success: boolean; error?: string; nextStep?: string }> {
   const authSession = authSessions.get(sessionId);
   if (!authSession) {
-    return { success: false, error: 'Session not found' };
+    return { success: false, error: 'Session not found. Please refresh the page and try again.' };
   }
 
   try {
     authSession.phoneNumber = phoneNumber;
     
     // Connect the client first
+    console.log('[AUTH] Connecting to Telegram...');
     await authSession.client.connect();
-    console.log('Client connected, starting authentication for:', phoneNumber);
+    console.log('[AUTH] Client connected, starting authentication for:', phoneNumber);
     
     // Set up handlers - these will be called by client.start()
     authSession.handlers.phoneNumber = async () => {
-      console.log('Phone number handler called by client.start()');
+      console.log('[AUTH] Phone number handler called by client.start(), returning:', phoneNumber);
       return phoneNumber;
     };
     
     authSession.handlers.phoneCode = async () => {
-      console.log('Phone code handler called - waiting for code to be provided...');
+      console.log('[AUTH] Phone code handler called - code was sent! Waiting for user to provide code...');
       // This will be resolved when submitCode is called
       return new Promise((resolve) => {
         authSession.resolvers.phoneCode = resolve;
@@ -97,6 +132,10 @@ export async function submitPhoneNumber(sessionId: string, phoneNumber: string):
     // 2. Send verification code to Telegram
     // 3. Wait for phoneCode handler to be called
     // 4. Wait for password handler if 2FA is enabled
+    let codeSent = false;
+    let startError: any = null;
+    
+    // Start the auth process
     authSession.startPromise = authSession.client.start({
       phoneNumber: authSession.handlers.phoneNumber!,
       phoneCode: authSession.handlers.phoneCode!,
@@ -104,34 +143,65 @@ export async function submitPhoneNumber(sessionId: string, phoneNumber: string):
       onError: (err: any) => {
         console.error('Auth error in client.start():', err);
         authSession.authError = err;
+        startError = err;
       },
     }).catch((err) => {
       console.error('Auth start failed:', err);
       authSession.authError = err;
+      startError = err;
       throw err;
     });
 
-    // Give it a moment for the code to be sent
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for the code to be sent
+    // The client.start() will call phoneNumber handler, then send the code
+    // We need to wait for this to complete
+    console.log('[AUTH] Starting authentication flow, waiting for code to be sent...');
     
-    // Check if there was a flood wait error
-    if (authSession.authError) {
-      const error: any = authSession.authError;
-      if (error.errorMessage === 'FLOOD' || error.code === 420) {
-        const waitSeconds = error.seconds || 300;
-        const waitMinutes = Math.ceil(waitSeconds / 60);
+    // Wait up to 15 seconds for the code to be sent
+    // The code is sent after the phoneNumber handler is called
+    for (let i = 0; i < 30; i++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Check if there was an error
+      if (authSession.authError || startError) {
+        const error: any = authSession.authError || startError;
+        console.error('[AUTH] Error detected:', error);
+        
+        // Check for flood wait error
+        if (error.errorMessage === 'FLOOD' || error.code === 420 || error.message?.includes('FLOOD') || error.errorMessage?.includes('FLOOD')) {
+          const waitSeconds = error.seconds || 300;
+          const waitMinutes = Math.ceil(waitSeconds / 60);
+          return { 
+            success: false, 
+            error: `Too many code requests. Please wait ${waitMinutes} minutes before trying again. Telegram rate-limits code requests to prevent spam.` 
+          };
+        }
+        
+        // Other errors
+        const errorMsg = error.errorMessage || error.message || String(error);
+        console.error('[AUTH] Error sending code:', errorMsg);
         return { 
           success: false, 
-          error: `Too many code requests. Please wait ${waitMinutes} minutes before trying again. Telegram rate-limits code requests to prevent spam.` 
+          error: errorMsg || 'Failed to send code. Please check your phone number and try again.' 
         };
       }
-      return { 
-        success: false, 
-        error: error.errorMessage || error.message || 'Failed to send code. Please try again.' 
-      };
+      
+      // Check if phoneCode handler was called (means code was sent)
+      // We can't directly check this, but if we wait a bit and no error occurred,
+      // the code should have been sent
+      if (i >= 3) { // Give it at least 1.5 seconds for Telegram to send the code
+        codeSent = true;
+        console.log('[AUTH] Code should have been sent by now');
+        break;
+      }
     }
     
-    console.log('Code should be sent by now. Check your Telegram.');
+    if (!codeSent && !authSession.authError && !startError) {
+      // Still waiting, but no error - code might still be sending
+      console.log('[AUTH] Code sending in progress, continuing...');
+    }
+    
+    console.log('[AUTH] Code should be sent. Check your Telegram app for the verification code.');
 
     authSession.step = 'code';
     return { success: true, nextStep: 'code' };

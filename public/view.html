@@ -3,19 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio Dashboard - View Only</title>
+    <title>Portfolio Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- Annotation plugin removed to prevent loading issues -->
-    <script>
-        // Check if Chart.js loaded
-        window.addEventListener('load', function() {
-            console.log('Page loaded');
-            console.log('Chart.js available:', typeof Chart !== 'undefined');
-            if (typeof Chart !== 'undefined') {
-                console.log('Chart.js version:', Chart.version);
-            }
-        });
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         * {
             -webkit-font-smoothing: antialiased;
@@ -283,9 +273,9 @@
                 <div class="last-updated-header">Auto-refreshing every 5 minutes</div>
                 <div id="lastUpdated" style="font-size: 16px; color: #333; font-weight: 500;">Loading...</div>
             </div>
-                <a href="https://polymarket.com/profile/0x234b0E87Da5579300a8cB3c1D29a9DD3d1e16144" target="_blank" rel="noopener noreferrer" class="profile-link">
-                    0x234b0E87Da5579300a8cB3c1D29a9DD3d1e16144
-                </a>
+            <a href="https://polymarket.com/profile/0x234b0E87Da5579300a8cB3c1D29a9DD3d1e16144" target="_blank" rel="noopener noreferrer" class="profile-link">
+                0x234b0E87Da5579300a8cB3c1D29a9DD3d1e16144
+            </a>
         </div>
 
         <div id="status" class="status info" style="display: none;"></div>
@@ -296,29 +286,20 @@
     </div>
 
     <script>
-        // Debug: Log when script loads
-        console.log('View page script loaded');
-        
         async function loadPortfolio() {
-            console.log('loadPortfolio called');
             try {
-                console.log('Fetching /api/portfolio/latest...');
                 // Add timeout to prevent hanging
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => {
-                    console.error('Request timeout after 10 seconds');
-                    controller.abort();
-                }, 10000); // 10 second timeout
-                
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
                 const response = await fetch('/api/portfolio/latest', {
                     signal: controller.signal,
                     headers: {
                         'Accept': 'application/json'
                     }
                 });
-                
+
                 clearTimeout(timeoutId);
-                console.log('Response received:', response.status, response.statusText);
                 
                 if (!response.ok) {
                     const errorText = await response.text();
@@ -326,10 +307,8 @@
                 }
                 
                 const data = await response.json();
-                console.log('Data received:', data);
                 displayPortfolio(data);
             } catch (error) {
-                console.error('Error loading portfolio:', error);
                 const errorMsg = error instanceof Error ? error.message : 'Unknown error';
                 let userMessage = errorMsg;
                 
@@ -381,26 +360,27 @@
                     </div>
                 </div>
                 <div class="chart-section" id="balanceChartContainer">
-                    <h2>Balance Over Time</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2 style="margin: 0;">Balance Over Time</h2>
+                        <select id="timeRange" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); font-size: 14px; background: white; cursor: pointer; font-family: inherit;">
+                            <option value="24h">24 hours</option>
+                            <option value="48h">48 hours</option>
+                            <option value="3d">3 days</option>
+                            <option value="7d" selected>7 days</option>
+                            <option value="all">All time</option>
+                        </select>
+                    </div>
                     <div class="chart-container">
                         <canvas id="balanceChart"></canvas>
                     </div>
                 </div>
             `;
             
-            portfolio.innerHTML = html;
-            
-            // Load and display chart immediately after balances
-            // Wait a bit for DOM to update
-            setTimeout(() => {
-                console.log('Calling loadBalanceChart after DOM update');
-                loadBalanceChart();
-            }, 100);
-            
-            // Then add positions section
+            // Build positions HTML
+            let positionsHtml = '';
             if (positions.length > 0 || snapshot.total_positions) {
                 const positionCount = snapshot.total_positions || positions.length;
-                let positionsHtml = `
+                positionsHtml = `
                     <div class="positions">
                         <h2>Positions (${positionCount})</h2>
                         <table class="positions-table">
@@ -416,7 +396,7 @@
                             </thead>
                             <tbody>
                 `;
-                
+
                 positions.forEach(pos => {
                     positionsHtml += `
                         <tr>
@@ -433,17 +413,29 @@
                         </tr>
                     `;
                 });
-                
+
                 positionsHtml += `
                             </tbody>
                         </table>
                     </div>
                 `;
-                portfolio.innerHTML += positionsHtml;
             } else {
-                portfolio.innerHTML += '<p>No positions found.</p>';
+                positionsHtml = '<p>No positions found.</p>';
             }
-            
+
+            // Set all HTML at once to avoid DOM recreation issues
+            portfolio.innerHTML = html + positionsHtml;
+
+            // Initialize dropdown from URL query param (AFTER all HTML is set)
+            const timeRangeSelect = document.getElementById('timeRange');
+            if (timeRangeSelect) {
+                const rangeFromURL = getTimeRangeFromURL();
+                timeRangeSelect.value = rangeFromURL;
+            }
+
+            // Load and display chart after DOM update
+            setTimeout(() => loadBalanceChart(), 100);
+
             // Update the last updated timestamp in the header
             updateLastUpdated(snapshot.timestamp);
         }
@@ -465,6 +457,17 @@
         // Note: Annotation plugin removed to prevent loading issues
         // Chart will work without annotations
 
+        function getTimeRangeFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('range') || '7d';
+        }
+
+        function setTimeRangeInURL(range) {
+            const url = new URL(window.location);
+            url.searchParams.set('range', range);
+            window.history.replaceState({}, '', url);
+        }
+
         async function loadBalanceChart() {
             try {
                 // Check if Chart.js is loaded
@@ -476,66 +479,34 @@
                     }
                     return;
                 }
-                
-                console.log('Loading balance chart...');
-                const response = await fetch('/api/portfolio/balance-history?limit=100');
+
+                // Get selected time range from dropdown or URL
+                const timeRangeSelect = document.getElementById('timeRange');
+                const range = timeRangeSelect ? timeRangeSelect.value : getTimeRangeFromURL();
+
+                const response = await fetch(`/api/portfolio/balance-history?range=${range}`);
                 if (!response.ok) {
-                    console.error('Failed to load balance history:', response.status);
                     return;
                 }
                 const result = await response.json();
-                console.log('Balance history response:', result);
-                const data = result.history || result; // Support both old and new format
-                const events = result.events || [];
+                const data = result.history || result;
                 const investedByTrader = result.investedByTrader || [];
-                
-                console.log('Data points:', data ? data.length : 0);
-                console.log('Invested by trader data:', investedByTrader.length);
-                
-                if (!data || data.length === 0) {
-                    console.warn('No data to chart');
-                    return; // No data to chart yet
-                }
 
-                // Chart container should already exist in the HTML (inserted after balances)
-                const chartCanvas = document.getElementById('balanceChart');
-                if (!chartCanvas) {
-                    console.error('Chart canvas not found');
+                if (!data || data.length === 0) {
                     return;
                 }
+
+                // Chart container should already exist in the HTML
+                const chartCanvas = document.getElementById('balanceChart');
+                if (!chartCanvas) return;
 
                 const ctx = chartCanvas.getContext('2d');
-                if (!ctx) {
-                    console.error('Could not get 2d context from canvas');
-                    return;
-                }
-                
+                if (!ctx) return;
+
                 // Destroy existing chart if it exists
                 if (balanceChart) {
                     balanceChart.destroy();
                 }
-
-                // Create chart labels
-                const labels = data.map(d => new Date(d.timestamp).toLocaleString());
-                console.log('Creating chart with', data.length, 'data points');
-                
-                // Build datasets for invested by trader
-                const datasets = [
-                    {
-                        label: 'Total Balance',
-                        data: data.map(d => d.total_balance),
-                        borderColor: '#007aff',
-                        backgroundColor: 'rgba(0, 122, 255, 0.1)',
-                        borderWidth: 2.5,
-                        tension: 0.4,
-                        fill: true,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        pointHoverBackgroundColor: '#007aff',
-                        pointHoverBorderColor: '#ffffff',
-                        pointHoverBorderWidth: 2
-                    }
-                ];
 
                 // Group invested by trader data by timestamp
                 const traderDataMap = new Map();
@@ -549,7 +520,6 @@
 
                 // Get unique traders
                 const traders = [...new Set(investedByTrader.map(item => item.trader))];
-                console.log('Traders found:', traders);
 
                 // Generate colors for each trader
                 const traderColors = [
@@ -561,12 +531,30 @@
                     { border: '#ffcc00', fill: 'rgba(255, 204, 0, 0.1)' }, // Yellow
                 ];
 
+                // Build datasets with {x, y} format for time scale
+                const datasets = [
+                    {
+                        label: 'Total Balance',
+                        data: data.map(d => ({ x: new Date(d.timestamp), y: d.total_balance })),
+                        borderColor: '#007aff',
+                        backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                        borderWidth: 2.5,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        pointHoverBackgroundColor: '#007aff',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    }
+                ];
+
                 // Create a dataset for each trader
                 traders.forEach((trader, index) => {
                     const color = traderColors[index % traderColors.length];
                     const traderData = data.map(d => {
                         const timestampData = traderDataMap.get(d.timestamp);
-                        return timestampData && timestampData[trader] ? timestampData[trader] : 0;
+                        return { x: new Date(d.timestamp), y: timestampData && timestampData[trader] ? timestampData[trader] : 0 };
                     });
 
                     datasets.push({
@@ -589,7 +577,7 @@
                 if (traders.length === 0) {
                     datasets.push({
                         label: 'Invested',
-                        data: data.map(d => d.invested),
+                        data: data.map(d => ({ x: new Date(d.timestamp), y: d.invested })),
                         borderColor: '#30d158',
                         backgroundColor: 'rgba(48, 209, 88, 0.1)',
                         borderWidth: 2.5,
@@ -603,99 +591,130 @@
                     });
                 }
 
+                // Determine appropriate time unit based on range
+                let timeUnit = 'hour';
+                if (range === '7d' || range === 'all') {
+                    timeUnit = 'day';
+                } else if (range === '3d') {
+                    timeUnit = 'day';
+                }
+
                 try {
                     balanceChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: datasets
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: {
-                            intersect: false,
-                            mode: 'index'
+                        type: 'line',
+                        data: {
+                            datasets: datasets
                         },
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'top',
-                                labels: {
-                                    usePointStyle: true,
-                                    padding: 15,
-                                    font: {
-                                        size: 13,
-                                        weight: '500',
-                                        family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
-                                    },
-                                    color: '#1d1d1f'
-                                }
-                            },
-                            tooltip: {
-                                mode: 'index',
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
                                 intersect: false,
-                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                backdropFilter: 'blur(10px)',
-                                padding: 12,
-                                titleFont: {
-                                    size: 13,
-                                    weight: '600',
-                                    family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
-                                },
-                                bodyFont: {
-                                    size: 13,
-                                    weight: '400',
-                                    family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
-                                },
-                                callbacks: {
-                                    label: function(context) {
-                                        return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                mode: 'index'
+                            },
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top',
+                                    labels: {
+                                        usePointStyle: true,
+                                        padding: 15,
+                                        font: {
+                                            size: 13,
+                                            weight: '500',
+                                            family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                        },
+                                        color: '#1d1d1f'
                                     }
                                 },
-                                cornerRadius: 10,
-                                displayColors: true
-                            }
-                        },
-                        scales: {
-                            x: {
-                                grid: {
-                                    display: false
-                                },
-                                ticks: {
-                                    font: {
-                                        size: 11,
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                    backdropFilter: 'blur(10px)',
+                                    padding: 12,
+                                    titleFont: {
+                                        size: 13,
+                                        weight: '600',
                                         family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
                                     },
-                                    color: '#86868b'
-                                },
-                                border: {
-                                    display: false
+                                    bodyFont: {
+                                        size: 13,
+                                        weight: '400',
+                                        family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                    },
+                                    callbacks: {
+                                        title: function(tooltipItems) {
+                                            if (tooltipItems.length > 0) {
+                                                const date = new Date(tooltipItems[0].parsed.x);
+                                                return date.toLocaleString();
+                                            }
+                                            return '';
+                                        },
+                                        label: function(context) {
+                                            return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                        }
+                                    },
+                                    cornerRadius: 10,
+                                    displayColors: true
                                 }
                             },
-                            y: {
-                                grid: {
-                                    color: 'rgba(0, 0, 0, 0.05)',
-                                    drawBorder: false
-                                },
-                                ticks: {
-                                    font: {
-                                        size: 11,
-                                        family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                            scales: {
+                                x: {
+                                    type: 'time',
+                                    time: {
+                                        unit: timeUnit,
+                                        displayFormats: {
+                                            hour: 'MMM d, h:mm a',
+                                            day: 'MMM d'
+                                        }
                                     },
-                                    color: '#86868b',
-                                    callback: function(value) {
-                                        return '$' + value.toFixed(0);
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 11,
+                                            family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                        },
+                                        color: '#86868b',
+                                        maxRotation: 0
+                                    },
+                                    border: {
+                                        display: false
                                     }
                                 },
-                                border: {
-                                    display: false
+                                y: {
+                                    grid: {
+                                        color: 'rgba(0, 0, 0, 0.05)',
+                                        drawBorder: false
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 11,
+                                            family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                        },
+                                        color: '#86868b',
+                                        callback: function(value) {
+                                            return '$' + value.toFixed(0);
+                                        }
+                                    },
+                                    border: {
+                                        display: false
+                                    }
                                 }
                             }
                         }
+                    });
+
+                    // Add event listener to dropdown if not already added
+                    if (timeRangeSelect && !timeRangeSelect.hasAttribute('data-listener-added')) {
+                        timeRangeSelect.addEventListener('change', () => {
+                            setTimeRangeInURL(timeRangeSelect.value);
+                            loadBalanceChart();
+                        });
+                        timeRangeSelect.setAttribute('data-listener-added', 'true');
                     }
-                });
-                console.log('Chart created successfully');
                 } catch (error) {
                     console.error('Error creating chart:', error);
                     // Show error message in chart container
@@ -738,7 +757,6 @@
         }
 
         // Initial load
-        console.log('Starting initial load...');
         loadPortfolio().catch(err => {
             console.error('Initial load failed:', err);
             document.getElementById('portfolio').innerHTML = 
@@ -750,10 +768,7 @@
         });
 
         // Auto-refresh dashboard data every 30 seconds
-        setInterval(() => {
-            console.log('Auto-refresh triggered');
-            loadPortfolio();
-        }, 30 * 1000);
+        setInterval(loadPortfolio, 30 * 1000);
     </script>
 </body>
 </html>

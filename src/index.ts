@@ -20,11 +20,12 @@ const SESSION_STRING = process.env.TELEGRAM_SESSION || '';
 const TARGET_BOT = (process.env.TARGET_BOT_USERNAME || '').replace(/^@/, ''); // Remove @ if present
 
 if (!API_ID || !API_HASH) {
-  console.error('Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Please check your .env file.');
-  process.exit(1);
+  console.warn('⚠️  Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Server will start but Telegram features will be unavailable.');
 }
 
 let telegramClient: TelegramPortfolioClient | null = null;
+let refreshInterval: NodeJS.Timeout | null = null;
+let connectionHealthCheckInterval: NodeJS.Timeout | null = null;
 
 // Track copy trading state to detect changes
 let lastKnownTraders: Set<string> = new Set();
@@ -114,6 +115,11 @@ async function initializeTelegram() {
     if (!refreshInterval) {
       startAutoRefresh();
     }
+    
+    // Start connection health check if not already started
+    if (!connectionHealthCheckInterval) {
+      startConnectionHealthCheck();
+    }
   } catch (error) {
     console.error('Failed to connect to Telegram:', error instanceof Error ? error.message : error);
     console.log('Server will start, but /api/refresh will fail until Telegram is configured');
@@ -133,6 +139,8 @@ app.post('/api/refresh', async (req, res) => {
       });
     }
 
+    // Ensure connection is alive
+    await telegramClient.ensureConnected();
     const responseText = await telegramClient.sendPositionsCommand();
     console.log('Bot response length:', responseText.length);
     console.log('Bot response (first 1000 chars):', responseText.substring(0, 1000));
@@ -192,10 +200,10 @@ app.get('/api/portfolio/history', async (req, res) => {
 
 app.get('/api/portfolio/balance-history', async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 100;
-    const history = await getBalanceHistory(limit);
-    const events = await getCopyTradingEvents(limit);
-    const investedByTrader = await getInvestedByTrader(limit);
+    const range = (req.query.range as string) || '7d';
+    const history = await getBalanceHistory(range);
+    const events = await getCopyTradingEvents(100);
+    const investedByTrader = await getInvestedByTrader(range);
     res.json({ history, events, investedByTrader });
   } catch (error) {
     console.error('Error getting balance history:', error);
@@ -218,6 +226,8 @@ app.post('/api/historical/fetch', async (req, res) => {
     const limit = parseInt(req.body.limit as string) || 2000;
     console.log(`[HISTORICAL] Fetching up to ${limit} messages from chat...`);
     
+    // Ensure connection is alive
+    await telegramClient.ensureConnected();
     const messages = await telegramClient.fetchHistoricalMessages(limit);
     console.log(`[HISTORICAL] Found ${messages.length} portfolio messages`);
     
@@ -276,10 +286,56 @@ app.post('/api/historical/fetch', async (req, res) => {
 });
 
 // Auth API routes
+app.get('/api/auth/status', (req, res) => {
+  // Reload .env to get latest values
+  dotenv.config();
+  const hasSession = !!process.env.TELEGRAM_SESSION;
+  const hasBot = !!process.env.TARGET_BOT_USERNAME;
+  const isConnected = !!telegramClient;
+
+  res.json({
+    configured: hasSession && hasBot,
+    connected: isConnected,
+  });
+});
+
 app.post('/api/auth/start', (req, res) => {
-  const sessionId = req.body.sessionId || `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  createAuthSession(sessionId, API_ID, API_HASH);
-  res.json({ success: true, sessionId, step: 'phone' });
+  // Reload .env to get latest values
+  dotenv.config();
+  const currentApiId = parseInt(process.env.TELEGRAM_API_ID || '0');
+  const currentApiHash = process.env.TELEGRAM_API_HASH || '';
+  
+  // Validate API credentials first
+  if (!currentApiId || currentApiId === 0 || !currentApiHash || currentApiHash.trim() === '') {
+    console.error('[AUTH] Missing API credentials. API_ID:', currentApiId, 'API_HASH:', currentApiHash ? '***' : 'missing');
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Please add them to your .env file and restart the server. Get your credentials from https://my.telegram.org/apps' 
+    });
+  }
+  
+  try {
+    const sessionId = req.body.sessionId || `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log('[AUTH] Creating auth session with API_ID:', currentApiId);
+    createAuthSession(sessionId, currentApiId, currentApiHash);
+    res.json({ success: true, sessionId, step: 'phone' });
+  } catch (error) {
+    console.error('[AUTH] Error creating auth session:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to initialize authentication';
+    
+    // Provide helpful error message
+    if (errorMessage.includes('API ID') || errorMessage.includes('Hash cannot be empty')) {
+      return res.status(400).json({
+        success: false,
+        error: 'TELEGRAM_API_ID and TELEGRAM_API_HASH must be configured in your .env file. Get them from https://my.telegram.org/apps'
+      });
+    }
+    
+    res.status(400).json({
+      success: false,
+      error: errorMessage
+    });
+  }
 });
 
 app.post('/api/auth/phone', async (req, res) => {
@@ -358,17 +414,15 @@ app.get('/auth', (req, res) => {
 
 // Serve dashboard
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
-// Serve read-only view (no auth controls)
-app.get('/view', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/view.html'));
 });
 
-// Auto-refresh every 5 minutes
-let refreshInterval: NodeJS.Timeout | null = null;
+// Redirect old /view route to home
+app.get('/view', (req, res) => {
+  res.redirect('/');
+});
 
+// Auto-refresh every 5 minutes
 async function autoRefresh() {
   if (!telegramClient) {
     await initializeTelegram();
@@ -376,6 +430,8 @@ async function autoRefresh() {
   
   if (telegramClient) {
     try {
+      // Ensure connection is alive before fetching
+      await telegramClient.ensureConnected();
       console.log('[AUTO-REFRESH] Fetching portfolio data...');
       const responseText = await telegramClient.sendPositionsCommand();
       const parsed = parsePortfolioResponse(responseText);
@@ -384,6 +440,12 @@ async function autoRefresh() {
       console.log(`[AUTO-REFRESH] Portfolio updated (snapshot ID: ${snapshotId})`);
     } catch (error) {
       console.error('[AUTO-REFRESH] Error:', error instanceof Error ? error.message : error);
+      // Try to reconnect on next refresh
+      if (error instanceof Error && (error.message.includes('Not connected') || error.message.includes('Not authorized'))) {
+        console.log('[AUTO-REFRESH] Attempting to reconnect...');
+        telegramClient = null;
+        await initializeTelegram();
+      }
     }
   }
 }
@@ -393,6 +455,28 @@ function startAutoRefresh() {
   autoRefresh();
   refreshInterval = setInterval(autoRefresh, 5 * 60 * 1000); // 5 minutes
   console.log('✅ Auto-refresh enabled: portfolio will update every 5 minutes');
+}
+
+// Connection health check - runs every 2 minutes to keep connection alive
+async function connectionHealthCheck() {
+  if (!telegramClient) {
+    return;
+  }
+  
+  try {
+    await telegramClient.ensureConnected();
+  } catch (error) {
+    console.error('[HEALTH CHECK] Connection issue detected:', error instanceof Error ? error.message : error);
+    // Try to reconnect
+    telegramClient = null;
+    await initializeTelegram();
+  }
+}
+
+function startConnectionHealthCheck() {
+  // Check connection health every 2 minutes
+  connectionHealthCheckInterval = setInterval(connectionHealthCheck, 2 * 60 * 1000);
+  console.log('✅ Connection health check enabled: checking every 2 minutes');
 }
 
 // Initialize and start server

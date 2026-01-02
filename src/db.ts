@@ -163,40 +163,81 @@ export async function getHistory(limit: number = 50): Promise<PortfolioSnapshot[
   }
 }
 
-export async function getBalanceHistory(limit: number = 100): Promise<{ timestamp: string; total_balance: number; invested: number }[]> {
+export async function getBalanceHistory(range: string = '7d'): Promise<{ timestamp: string; total_balance: number; invested: number }[]> {
   try {
-    return await dbAll(
-      `SELECT timestamp, total_balance, invested 
-      FROM portfolio_snapshots 
-      ORDER BY timestamp ASC 
-      LIMIT ?`,
-      [limit]
-    ) as { timestamp: string; total_balance: number; invested: number }[];
+    const startTime = getStartTimeForRange(range);
+
+    if (startTime) {
+      return await dbAll(
+        `SELECT timestamp, total_balance, invested
+        FROM portfolio_snapshots
+        WHERE timestamp >= ?
+        ORDER BY timestamp ASC`,
+        [startTime.toISOString()]
+      ) as { timestamp: string; total_balance: number; invested: number }[];
+    } else {
+      // 'all' - no time filter
+      return await dbAll(
+        `SELECT timestamp, total_balance, invested
+        FROM portfolio_snapshots
+        ORDER BY timestamp ASC`
+      ) as { timestamp: string; total_balance: number; invested: number }[];
+    }
   } catch (error) {
     console.error('Error getting balance history:', error);
     return [];
   }
 }
 
-export async function getInvestedByTrader(limit: number = 100): Promise<Array<{ timestamp: string; trader: string; invested: number }>> {
+function getStartTimeForRange(range: string): Date | null {
+  const now = new Date();
+  switch (range) {
+    case '24h': return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    case '48h': return new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    case '3d': return new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    case '7d': return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case 'all': return null;
+    default: return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // Default to 7d
+  }
+}
+
+export async function getInvestedByTrader(range: string = '7d'): Promise<Array<{ timestamp: string; trader: string; invested: number }>> {
   try {
+    const startTime = getStartTimeForRange(range);
+
     // Get invested amounts grouped by trader and snapshot timestamp
     // This returns one row per snapshot per trader
     // Use value if invested is 0 (some positions may have 0 invested but still have value)
-    return await dbAll(
-      `SELECT 
-        s.timestamp,
-        p.copied_from as trader,
-        SUM(COALESCE(NULLIF(p.invested, 0), p.value)) as invested
-      FROM portfolio_snapshots s
-      INNER JOIN positions p ON p.snapshot_id = s.id
-      WHERE p.copied_from IS NOT NULL AND p.copied_from != ''
-      GROUP BY s.timestamp, p.copied_from
-      HAVING SUM(COALESCE(NULLIF(p.invested, 0), p.value)) > 0
-      ORDER BY s.timestamp ASC
-      LIMIT ?`,
-      [limit * 20] // Multiply to account for multiple traders per snapshot
-    ) as Array<{ timestamp: string; trader: string; invested: number }>;
+    if (startTime) {
+      return await dbAll(
+        `SELECT
+          s.timestamp,
+          p.copied_from as trader,
+          SUM(COALESCE(NULLIF(p.invested, 0), p.value)) as invested
+        FROM portfolio_snapshots s
+        INNER JOIN positions p ON p.snapshot_id = s.id
+        WHERE p.copied_from IS NOT NULL AND p.copied_from != ''
+          AND s.timestamp >= ?
+        GROUP BY s.timestamp, p.copied_from
+        HAVING SUM(COALESCE(NULLIF(p.invested, 0), p.value)) > 0
+        ORDER BY s.timestamp ASC`,
+        [startTime.toISOString()]
+      ) as Array<{ timestamp: string; trader: string; invested: number }>;
+    } else {
+      // 'all' - no time filter
+      return await dbAll(
+        `SELECT
+          s.timestamp,
+          p.copied_from as trader,
+          SUM(COALESCE(NULLIF(p.invested, 0), p.value)) as invested
+        FROM portfolio_snapshots s
+        INNER JOIN positions p ON p.snapshot_id = s.id
+        WHERE p.copied_from IS NOT NULL AND p.copied_from != ''
+        GROUP BY s.timestamp, p.copied_from
+        HAVING SUM(COALESCE(NULLIF(p.invested, 0), p.value)) > 0
+        ORDER BY s.timestamp ASC`
+      ) as Array<{ timestamp: string; trader: string; invested: number }>;
+    }
   } catch (error) {
     console.error('Error getting invested by trader:', error);
     return [];
