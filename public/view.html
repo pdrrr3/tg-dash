@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Dashboard - View Only</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Annotation plugin removed to prevent loading issues -->
+    <script>
+        // Check if Chart.js loaded
+        window.addEventListener('load', function() {
+            console.log('Page loaded');
+            console.log('Chart.js available:', typeof Chart !== 'undefined');
+            if (typeof Chart !== 'undefined') {
+                console.log('Chart.js version:', Chart.version);
+            }
+        });
+    </script>
+    <style>
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(180deg, #f5f5f7 0%, #ffffff 100%);
+            min-height: 100vh;
+            color: #1d1d1f;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 34px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin: 0 0 8px 0;
+            color: #1d1d1f;
+        }
+        .header-info {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .header-left {
+            flex: 1;
+        }
+        .last-updated-header {
+            font-size: 13px;
+            color: #86868b;
+            font-weight: 400;
+            margin-bottom: 4px;
+        }
+        #lastUpdated {
+            font-size: 15px;
+            color: #1d1d1f;
+            font-weight: 500;
+        }
+        .profile-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background: rgba(0, 122, 255, 0.1);
+            color: #007aff;
+            text-decoration: none;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 0.5px solid rgba(0, 122, 255, 0.2);
+        }
+        .profile-link:hover {
+            background: rgba(0, 122, 255, 0.15);
+            transform: translateY(-1px);
+        }
+        .profile-link:active {
+            transform: translateY(0);
+            background: rgba(0, 122, 255, 0.2);
+        }
+        .profile-link svg {
+            width: 14px;
+            height: 14px;
+            fill: #007aff;
+        }
+        .status {
+            margin-top: 12px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            display: none;
+        }
+        .status.info {
+            background: rgba(0, 122, 255, 0.1);
+            color: #007aff;
+        }
+        .balances {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .balance-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.08);
+            border: 0.5px solid rgba(0, 0, 0, 0.04);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .balance-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.12);
+        }
+        .balance-card h3 {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+            color: #86868b;
+            font-weight: 500;
+            letter-spacing: -0.1px;
+        }
+        .balance-card .value {
+            font-size: 28px;
+            font-weight: 600;
+            color: #1d1d1f;
+            letter-spacing: -0.5px;
+            line-height: 1.1;
+        }
+        .balance-card .pnl {
+            font-size: 15px;
+            font-weight: 500;
+            margin-top: 6px;
+            letter-spacing: -0.2px;
+        }
+        .pnl.positive {
+            color: #30d158;
+        }
+        .pnl.negative {
+            color: #ff3b30;
+        }
+        .chart-section {
+            margin: 20px 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.08);
+            border: 0.5px solid rgba(0, 0, 0, 0.04);
+        }
+        .chart-section h2 {
+            margin: 0 0 20px 0;
+            color: #1d1d1f;
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            background: transparent;
+            border-radius: 12px;
+            padding: 8px;
+        }
+        .positions {
+            margin-top: 20px;
+        }
+        .positions h2 {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            margin: 0 0 16px 0;
+            color: #1d1d1f;
+        }
+        .positions-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.08);
+            border: 0.5px solid rgba(0, 0, 0, 0.04);
+        }
+        .positions-table th {
+            background: rgba(248, 248, 248, 0.8);
+            font-size: 12px;
+            color: #86868b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+        }
+        .positions-table td {
+            padding: 14px 16px;
+            font-size: 15px;
+            color: #1d1d1f;
+            border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+        }
+        .positions-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .positions-table tbody tr:hover {
+            background: rgba(0, 0, 0, 0.02);
+        }
+        .pnl-positive {
+            color: #30d158;
+            font-weight: 500;
+        }
+        .pnl-negative {
+            color: #ff3b30;
+            font-weight: 500;
+        }
+        .last-updated {
+            margin-top: 16px;
+            color: #86868b;
+            font-size: 13px;
+        }
+        #portfolio {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+            h1 {
+                font-size: 28px;
+            }
+            .header-info {
+                flex-direction: column;
+                gap: 12px;
+            }
+            .profile-link {
+                align-self: flex-start;
+            }
+            .balances {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+            .balance-card {
+                padding: 16px;
+            }
+            .balance-card .value {
+                font-size: 24px;
+            }
+            .positions-table {
+                font-size: 13px;
+            }
+            .positions-table th,
+            .positions-table td {
+                padding: 10px 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Portfolio Dashboard</h1>
+        
+        <div class="header-info">
+            <div class="header-left">
+                <div class="last-updated-header">Auto-refreshing every 5 minutes</div>
+                <div id="lastUpdated" style="font-size: 16px; color: #333; font-weight: 500;">Loading...</div>
+            </div>
+                <a href="https://polymarket.com/profile/0x234b0E87Da5579300a8cB3c1D29a9DD3d1e16144" target="_blank" rel="noopener noreferrer" class="profile-link">
+                    0x234b0E87Da5579300a8cB3c1D29a9DD3d1e16144
+                </a>
+        </div>
+
+        <div id="status" class="status info" style="display: none;"></div>
+
+        <div id="portfolio">
+            <p>Loading portfolio data...</p>
+        </div>
+    </div>
+
+    <script>
+        // Debug: Log when script loads
+        console.log('View page script loaded');
+        
+        async function loadPortfolio() {
+            console.log('loadPortfolio called');
+            try {
+                console.log('Fetching /api/portfolio/latest...');
+                // Add timeout to prevent hanging
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    console.error('Request timeout after 10 seconds');
+                    controller.abort();
+                }, 10000); // 10 second timeout
+                
+                const response = await fetch('/api/portfolio/latest', {
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                clearTimeout(timeoutId);
+                console.log('Response received:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText || 'No portfolio data found'}`);
+                }
+                
+                const data = await response.json();
+                console.log('Data received:', data);
+                displayPortfolio(data);
+            } catch (error) {
+                console.error('Error loading portfolio:', error);
+                const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+                let userMessage = errorMsg;
+                
+                if (error instanceof Error && error.name === 'AbortError') {
+                    userMessage = 'Request timed out. The server may not be responding.';
+                } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('Load failed')) {
+                    userMessage = 'Cannot connect to server. Make sure the server is running on port 3001.';
+                }
+                
+                document.getElementById('portfolio').innerHTML = 
+                    `<div style="color: #ff3b30; padding: 16px; background: rgba(255, 59, 48, 0.1); border-radius: 12px; margin: 20px 0;">
+                        <strong>Error loading portfolio:</strong> ${userMessage}
+                        <br><br>
+                        <small style="color: #86868b;">Check the browser console (F12) for more details</small>
+                    </div>`;
+            }
+        }
+
+        function displayPortfolio(data) {
+            const portfolio = document.getElementById('portfolio');
+            if (!data) {
+                portfolio.innerHTML = '<p style="color: #ff3b30;">No portfolio data available</p>';
+                return;
+            }
+            
+            const snapshot = data;
+            const positions = data.positions || [];
+            
+            let html = `
+                <div class="balances">
+                    <div class="balance-card">
+                        <h3>Total Balance</h3>
+                        <div class="value">$${formatNumber(snapshot.total_balance)}</div>
+                    </div>
+                    <div class="balance-card">
+                        <h3>Available</h3>
+                        <div class="value">$${formatNumber(snapshot.available_balance)}</div>
+                    </div>
+                    <div class="balance-card">
+                        <h3>Invested</h3>
+                        <div class="value">$${formatNumber(snapshot.invested)}</div>
+                    </div>
+                    <div class="balance-card">
+                        <h3>Total PnL</h3>
+                        <div class="value">$${formatNumber(snapshot.total_pnl_usd)}</div>
+                        <div class="pnl ${snapshot.total_pnl_pct >= 0 ? 'positive' : 'negative'}">
+                            ${snapshot.total_pnl_pct >= 0 ? '+' : ''}${formatNumber(snapshot.total_pnl_pct)}%
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-section" id="balanceChartContainer">
+                    <h2>Balance Over Time</h2>
+                    <div class="chart-container">
+                        <canvas id="balanceChart"></canvas>
+                    </div>
+                </div>
+            `;
+            
+            portfolio.innerHTML = html;
+            
+            // Load and display chart immediately after balances
+            // Wait a bit for DOM to update
+            setTimeout(() => {
+                console.log('Calling loadBalanceChart after DOM update');
+                loadBalanceChart();
+            }, 100);
+            
+            // Then add positions section
+            if (positions.length > 0 || snapshot.total_positions) {
+                const positionCount = snapshot.total_positions || positions.length;
+                let positionsHtml = `
+                    <div class="positions">
+                        <h2>Positions (${positionCount})</h2>
+                        <table class="positions-table">
+                            <thead>
+                                <tr>
+                                    <th>Market</th>
+                                    <th>Side</th>
+                                    <th>Entry Price</th>
+                                    <th>Value</th>
+                                    <th>PnL</th>
+                                    <th>PnL %</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                positions.forEach(pos => {
+                    positionsHtml += `
+                        <tr>
+                            <td>${escapeHtml(pos.market_question)}</td>
+                            <td>${pos.side}</td>
+                            <td>$${formatNumber(pos.entry_price)}</td>
+                            <td>$${formatNumber(pos.value)}</td>
+                            <td class="${pos.pnl_usd >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                                $${formatNumber(pos.pnl_usd)}
+                            </td>
+                            <td class="${pos.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                                ${pos.pnl_pct >= 0 ? '+' : ''}${formatNumber(pos.pnl_pct)}%
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                positionsHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                portfolio.innerHTML += positionsHtml;
+            } else {
+                portfolio.innerHTML += '<p>No positions found.</p>';
+            }
+            
+            // Update the last updated timestamp in the header
+            updateLastUpdated(snapshot.timestamp);
+        }
+
+        // Add error handler for unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Unhandled promise rejection:', event.reason);
+            const portfolio = document.getElementById('portfolio');
+            if (portfolio && portfolio.innerHTML.includes('Loading')) {
+                portfolio.innerHTML = 
+                    `<div style="color: #ff3b30; padding: 16px; background: rgba(255, 59, 48, 0.1); border-radius: 12px; margin: 20px 0;">
+                        <strong>Error:</strong> ${event.reason?.message || 'Unknown error occurred'}
+                    </div>`;
+            }
+        });
+
+        let balanceChart = null;
+
+        // Note: Annotation plugin removed to prevent loading issues
+        // Chart will work without annotations
+
+        async function loadBalanceChart() {
+            try {
+                // Check if Chart.js is loaded
+                if (typeof Chart === 'undefined') {
+                    console.error('Chart.js is not loaded');
+                    const chartContainer = document.querySelector('.chart-container');
+                    if (chartContainer) {
+                        chartContainer.innerHTML = '<p style="color: #ff3b30; padding: 20px;">Chart.js library failed to load. Please refresh the page.</p>';
+                    }
+                    return;
+                }
+                
+                console.log('Loading balance chart...');
+                const response = await fetch('/api/portfolio/balance-history?limit=100');
+                if (!response.ok) {
+                    console.error('Failed to load balance history:', response.status);
+                    return;
+                }
+                const result = await response.json();
+                console.log('Balance history response:', result);
+                const data = result.history || result; // Support both old and new format
+                const events = result.events || [];
+                const investedByTrader = result.investedByTrader || [];
+                
+                console.log('Data points:', data ? data.length : 0);
+                console.log('Invested by trader data:', investedByTrader.length);
+                
+                if (!data || data.length === 0) {
+                    console.warn('No data to chart');
+                    return; // No data to chart yet
+                }
+
+                // Chart container should already exist in the HTML (inserted after balances)
+                const chartCanvas = document.getElementById('balanceChart');
+                if (!chartCanvas) {
+                    console.error('Chart canvas not found');
+                    return;
+                }
+
+                const ctx = chartCanvas.getContext('2d');
+                if (!ctx) {
+                    console.error('Could not get 2d context from canvas');
+                    return;
+                }
+                
+                // Destroy existing chart if it exists
+                if (balanceChart) {
+                    balanceChart.destroy();
+                }
+
+                // Create chart labels
+                const labels = data.map(d => new Date(d.timestamp).toLocaleString());
+                console.log('Creating chart with', data.length, 'data points');
+                
+                // Build datasets for invested by trader
+                const datasets = [
+                    {
+                        label: 'Total Balance',
+                        data: data.map(d => d.total_balance),
+                        borderColor: '#007aff',
+                        backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                        borderWidth: 2.5,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        pointHoverBackgroundColor: '#007aff',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    }
+                ];
+
+                // Group invested by trader data by timestamp
+                const traderDataMap = new Map();
+                investedByTrader.forEach(item => {
+                    const key = item.timestamp;
+                    if (!traderDataMap.has(key)) {
+                        traderDataMap.set(key, {});
+                    }
+                    traderDataMap.get(key)[item.trader] = item.invested;
+                });
+
+                // Get unique traders
+                const traders = [...new Set(investedByTrader.map(item => item.trader))];
+                console.log('Traders found:', traders);
+
+                // Generate colors for each trader
+                const traderColors = [
+                    { border: '#30d158', fill: 'rgba(48, 209, 88, 0.1)' }, // Green
+                    { border: '#ff9500', fill: 'rgba(255, 149, 0, 0.1)' }, // Orange
+                    { border: '#ff3b30', fill: 'rgba(255, 59, 48, 0.1)' }, // Red
+                    { border: '#af52de', fill: 'rgba(175, 82, 222, 0.1)' }, // Purple
+                    { border: '#5ac8fa', fill: 'rgba(90, 200, 250, 0.1)' }, // Light Blue
+                    { border: '#ffcc00', fill: 'rgba(255, 204, 0, 0.1)' }, // Yellow
+                ];
+
+                // Create a dataset for each trader
+                traders.forEach((trader, index) => {
+                    const color = traderColors[index % traderColors.length];
+                    const traderData = data.map(d => {
+                        const timestampData = traderDataMap.get(d.timestamp);
+                        return timestampData && timestampData[trader] ? timestampData[trader] : 0;
+                    });
+
+                    datasets.push({
+                        label: `Invested: ${trader}`,
+                        data: traderData,
+                        borderColor: color.border,
+                        backgroundColor: color.fill,
+                        borderWidth: 2.5,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        pointHoverBackgroundColor: color.border,
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    });
+                });
+
+                // If no traders, show total invested
+                if (traders.length === 0) {
+                    datasets.push({
+                        label: 'Invested',
+                        data: data.map(d => d.invested),
+                        borderColor: '#30d158',
+                        backgroundColor: 'rgba(48, 209, 88, 0.1)',
+                        borderWidth: 2.5,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        pointHoverBackgroundColor: '#30d158',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
+                    });
+                }
+
+                try {
+                    balanceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 15,
+                                    font: {
+                                        size: 13,
+                                        weight: '500',
+                                        family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                    },
+                                    color: '#1d1d1f'
+                                }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                backdropFilter: 'blur(10px)',
+                                padding: 12,
+                                titleFont: {
+                                    size: 13,
+                                    weight: '600',
+                                    family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                },
+                                bodyFont: {
+                                    size: 13,
+                                    weight: '400',
+                                    family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                },
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                    }
+                                },
+                                cornerRadius: 10,
+                                displayColors: true
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    font: {
+                                        size: 11,
+                                        family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                    },
+                                    color: '#86868b'
+                                },
+                                border: {
+                                    display: false
+                                }
+                            },
+                            y: {
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.05)',
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    font: {
+                                        size: 11,
+                                        family: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif'
+                                    },
+                                    color: '#86868b',
+                                    callback: function(value) {
+                                        return '$' + value.toFixed(0);
+                                    }
+                                },
+                                border: {
+                                    display: false
+                                }
+                            }
+                        }
+                    }
+                });
+                console.log('Chart created successfully');
+                } catch (error) {
+                    console.error('Error creating chart:', error);
+                    // Show error message in chart container
+                    const chartContainer = document.querySelector('.chart-container');
+                    if (chartContainer) {
+                        chartContainer.innerHTML = `<p style="color: #ff3b30; padding: 20px;">Error loading chart: ${error.message}</p>`;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading balance chart:', error);
+                const chartContainer = document.querySelector('.chart-container');
+                if (chartContainer) {
+                    chartContainer.innerHTML = `<p style="color: #ff3b30; padding: 20px;">Error loading chart data: ${error.message}</p>`;
+                }
+            }
+        }
+
+        function updateLastUpdated(timestamp) {
+            const lastUpdatedElement = document.getElementById('lastUpdated');
+            if (lastUpdatedElement) {
+                lastUpdatedElement.innerText = 'Last updated: ' + new Date(timestamp).toLocaleString();
+            }
+        }
+
+        function formatNumber(num) {
+            if (num === null || num === undefined) return '0.00';
+            return parseFloat(num).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Initial load
+        console.log('Starting initial load...');
+        loadPortfolio().catch(err => {
+            console.error('Initial load failed:', err);
+            document.getElementById('portfolio').innerHTML = 
+                `<div style="color: #ff3b30; padding: 16px; background: rgba(255, 59, 48, 0.1); border-radius: 12px; margin: 20px 0;">
+                    <strong>Failed to load:</strong> ${err.message}
+                    <br><br>
+                    <small>Open browser console (F12) for details</small>
+                </div>`;
+        });
+
+        // Auto-refresh dashboard data every 30 seconds
+        setInterval(() => {
+            console.log('Auto-refresh triggered');
+            loadPortfolio();
+        }, 30 * 1000);
+    </script>
+</body>
+</html>
+
