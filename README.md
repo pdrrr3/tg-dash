@@ -1,138 +1,36 @@
-# Telegram Portfolio Dashboard
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-A minimal web dashboard that reads your Polymarket copy-trading portfolio by acting as a Telegram user account (not a bot).
+## Getting Started
 
-## Features
+First, run the development server:
 
-- Sends `/positions` command to a Telegram bot automatically
-- Parses portfolio data (balances, positions, PnL)
-- Stores snapshots in SQLite database
-- Simple web dashboard with refresh button
-- Read-only (no trade execution)
-
-## Prerequisites
-
-1. **Get Telegram API credentials:**
-   - Go to https://my.telegram.org/apps
-   - Create an application
-   - Note your `api_id` and `api_hash`
-
-2. **Know your bot username:**
-   - The username of the bot you want to query (without @)
-
-## Setup
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Create `.env` file:**
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Add your API credentials to `.env`:**
-   ```env
-   TELEGRAM_API_ID=your_api_id
-   TELEGRAM_API_HASH=your_api_hash
-   TARGET_BOT_USERNAME=your_bot_username
-   PORT=3000
-   ```
-
-4. **Authenticate with Telegram (one-time setup):**
-   ```bash
-   npx ts-node src/auth.ts
-   ```
-   
-   This will:
-   - Ask for your phone number
-   - Send you a code via Telegram
-   - Ask for the code
-   - Ask for 2FA password if enabled
-   - Generate a session string
-
-5. **Add the session string to `.env`:**
-   ```env
-   TELEGRAM_SESSION=your_session_string_here
-   ```
-
-6. **Build and run:**
-   ```bash
-   npm run build
-   npm start
-   ```
-
-   Or for development:
-   ```bash
-   npm run dev
-   ```
-
-7. **Open your browser:**
-   ```
-   http://localhost:3000
-   ```
-   
-   For a read-only view (no auth controls), use:
-   ```
-   http://localhost:3000/view
-   ```
-
-## Usage
-
-1. Click "Refresh Portfolio" to fetch the latest positions from the bot
-2. View balances, total PnL, and all positions
-3. Data is automatically stored in SQLite (`portfolio.db`)
-
-## API Endpoints
-
-- `POST /api/refresh` - Fetch latest portfolio from Telegram bot
-- `GET /api/portfolio/latest` - Get the most recent portfolio snapshot
-- `GET /api/portfolio/history?limit=50` - Get portfolio history
-
-## File Structure
-
-```
-tg-dash/
-├── src/
-│   ├── index.ts          # Express server and API routes
-│   ├── telegram.ts       # Telegram client using gramjs
-│   ├── parser.ts         # Portfolio response parser
-│   ├── db.ts             # SQLite database operations
-│   ├── types.ts          # TypeScript interfaces
-│   └── auth.ts           # One-time authentication helper
-├── public/
-│   └── index.html        # Dashboard UI
-├── package.json
-├── tsconfig.json
-└── README.md
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Database Schema
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-**portfolio_snapshots:**
-- id, total_balance, available_balance, invested, value, total_pnl_usd, total_pnl_pct, timestamp
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-**positions:**
-- id, snapshot_id, market_question, side, entry_price, invested, shares, value, pnl_usd, pnl_pct, expiry_timestamp, copied_from
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Notes
+## Learn More
 
-- The parser is defensive and tries to handle various response formats
-- Session is persisted in environment variable (no file-based session storage)
-- Single user, no authentication required for the web interface
-- Read-only operations only
+To learn more about Next.js, take a look at the following resources:
 
-## Troubleshooting
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-**"Not authorized" error:**
-- Run the authentication script again to get a new session string
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-**Bot not responding:**
-- Make sure the bot username is correct (without @)
-- Check that you've sent `/positions` manually at least once before
-- The bot must be in your chats
+## Deploy on Vercel
 
-**Parser issues:**
-- The parser tries to be flexible, but if the bot's response format changes significantly, you may need to update `src/parser.ts`
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

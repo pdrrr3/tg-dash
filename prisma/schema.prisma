@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model PortfolioSnapshot {
+  id               Int        @id @default(autoincrement())
+  totalBalance     Float      @map("total_balance")
+  availableBalance Float      @map("available_balance")
+  invested         Float
+  value            Float
+  totalPnlUsd      Float      @map("total_pnl_usd")
+  totalPnlPct      Float      @map("total_pnl_pct")
+  timestamp        String
+  totalPositions   Int?       @map("total_positions")
+  positions        Position[]
+
+  @@index([timestamp])
+  @@map("portfolio_snapshots")
+}
+
+model Position {
+  id              Int               @id @default(autoincrement())
+  snapshotId      Int               @map("snapshot_id")
+  marketQuestion  String            @map("market_question")
+  side            String
+  entryPrice      Float             @map("entry_price")
+  invested        Float
+  shares          Float
+  value           Float
+  pnlUsd          Float             @map("pnl_usd")
+  pnlPct          Float             @map("pnl_pct")
+  expiryTimestamp String?           @map("expiry_timestamp")
+  copiedFrom      String?           @map("copied_from")
+  snapshot        PortfolioSnapshot @relation(fields: [snapshotId], references: [id])
+
+  @@index([snapshotId])
+  @@map("positions")
+}
+
+model CopyTradingEvent {
+  id          Int     @id @default(autoincrement())
+  timestamp   String
+  eventType   String  @map("event_type")
+  description String
+  traderName  String? @map("trader_name")
+
+  @@index([timestamp])
+  @@map("copy_trading_events")
+}
+
+model AppSetting {
+  key       String @id
+  value     String
+  updatedAt String @map("updated_at")
+
+  @@map("app_settings")
+}
