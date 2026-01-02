@@ -43,7 +43,9 @@ export async function POST(request: NextRequest) {
       console.log('[AUTH] Authentication complete, session saved');
     }
 
-    return NextResponse.json(result);
+    // Don't expose session string to frontend
+    const { sessionString, ...safeResult } = result;
+    return NextResponse.json(safeResult);
   } catch (error) {
     console.error('[AUTH] Error submitting code:', error);
     return NextResponse.json(

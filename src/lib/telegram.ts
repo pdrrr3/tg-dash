@@ -1,5 +1,6 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
+import { getTelegramSession } from './db';
 
 export class TelegramPortfolioClient {
   private client: TelegramClient;
@@ -190,12 +191,27 @@ export function setTelegramClient(client: TelegramPortfolioClient | null): void 
 export async function initializeTelegramClient(): Promise<TelegramPortfolioClient | null> {
   const apiId = process.env.TELEGRAM_API_ID;
   const apiHash = process.env.TELEGRAM_API_HASH;
-  const session = process.env.TELEGRAM_SESSION;
   const botUsername = process.env.TARGET_BOT_USERNAME;
 
-  if (!apiId || !apiHash || !session || !botUsername) {
-    console.log('[TELEGRAM] Missing credentials, skipping initialization');
+  // Try to get session from database first, fall back to env var
+  const dbSession = await getTelegramSession();
+  const envSession = process.env.TELEGRAM_SESSION;
+  const session = dbSession || envSession;
+
+  if (!apiId || !apiHash || !botUsername) {
+    console.log('[TELEGRAM] Missing API credentials, skipping initialization');
     return null;
+  }
+
+  if (!session) {
+    console.log('[TELEGRAM] No session found. Please authenticate at /auth');
+    return null;
+  }
+
+  if (dbSession) {
+    console.log('[TELEGRAM] Using session from database');
+  } else if (envSession) {
+    console.log('[TELEGRAM] Using session from environment variable');
   }
 
   try {
