@@ -1,8 +1,12 @@
 import sqlite3 from 'sqlite3';
 import { PortfolioSnapshot, Position, CopyTradingEvent } from './types';
 import { promisify } from 'util';
+import path from 'path';
 
-const db = new sqlite3.Database('portfolio.db');
+// Use environment variable for database path, or default to current directory
+// Railway volumes should be mounted to /data
+const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'portfolio.db');
+const db = new sqlite3.Database(DB_PATH);
 
 // Promisify database methods
 const dbGet = promisify(db.get.bind(db)) as (sql: string, params?: any[]) => Promise<any>;
