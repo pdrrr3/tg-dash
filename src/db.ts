@@ -51,10 +51,62 @@ dbExec(`
     trader_name TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_snapshot_timestamp ON portfolio_snapshots(timestamp);
   CREATE INDEX IF NOT EXISTS idx_positions_snapshot ON positions(snapshot_id);
   CREATE INDEX IF NOT EXISTS idx_copy_events_timestamp ON copy_trading_events(timestamp);
 `).catch(err => console.error('Database initialization error:', err));
+
+// App settings functions
+export async function getSetting(key: string): Promise<string | null> {
+  try {
+    const result = await dbGet(
+      'SELECT value FROM app_settings WHERE key = ?',
+      [key]
+    ) as { value: string } | undefined;
+    return result?.value || null;
+  } catch (error) {
+    console.error(`Error getting setting ${key}:`, error);
+    return null;
+  }
+}
+
+export async function saveSetting(key: string, value: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    db.run(
+      `INSERT INTO app_settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?`,
+      [key, value, new Date().toISOString(), value, new Date().toISOString()],
+      (err) => {
+        if (err) {
+          console.error(`Error saving setting ${key}:`, err);
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      }
+    );
+  });
+}
+
+// Telegram session helpers
+export async function getTelegramSession(): Promise<string | null> {
+  return getSetting('telegram_session');
+}
+
+export async function saveTelegramSession(sessionString: string): Promise<boolean> {
+  const saved = await saveSetting('telegram_session', sessionString);
+  if (saved) {
+    console.log('[DB] ✅ Telegram session saved to database');
+  }
+  return saved;
+}
 
 export async function savePortfolio(snapshot: PortfolioSnapshot, positions: Position[]): Promise<number> {
   return new Promise((resolve, reject) => {

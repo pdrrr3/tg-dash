@@ -2,9 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { TelegramPortfolioClient } from './telegram';
 import { parsePortfolioResponse } from './parser';
-import { savePortfolio, getLatestSnapshot, getHistory, getBalanceHistory, snapshotExistsNearTimestamp, saveCopyTradingEvent, getCopyTradingEvents, getUniqueTraders, getInvestedByTrader } from './db';
+import { savePortfolio, getLatestSnapshot, getHistory, getBalanceHistory, snapshotExistsNearTimestamp, saveCopyTradingEvent, getCopyTradingEvents, getUniqueTraders, getInvestedByTrader, getTelegramSession, saveTelegramSession } from './db';
 import path from 'path';
-import fs from 'fs';
 import { createAuthSession, submitPhoneNumber, submitCode, submitPassword, cleanupAuthSession } from './auth-web';
 
 dotenv.config();
@@ -92,15 +91,22 @@ async function detectCopyTradingChanges(snapshotId: number, positions: any[]): P
 }
 
 async function initializeTelegram() {
-  // Reload .env to get latest session string
-  dotenv.config();
-  const currentSession = process.env.TELEGRAM_SESSION || '';
+  // Try to get session from database first, then fall back to env var
+  const dbSession = await getTelegramSession();
+  const envSession = process.env.TELEGRAM_SESSION || '';
+  const currentSession = dbSession || envSession;
   const currentBot = (process.env.TARGET_BOT_USERNAME || '').replace(/^@/, '');
-  
+
   if (!currentSession || !currentBot) {
     console.log('⚠️  Telegram session not configured. Use /auth page to authenticate.');
     telegramClient = null;
     return;
+  }
+
+  if (dbSession) {
+    console.log('[TELEGRAM] Using session from database');
+  } else if (envSession) {
+    console.log('[TELEGRAM] Using session from environment variable');
   }
 
   try {
@@ -356,24 +362,14 @@ app.post('/api/auth/code', async (req, res) => {
 
   const result = await submitCode(sessionId, code);
   if (result.success && result.sessionString) {
-    // Save session string to .env file
-    try {
-      const envPath = path.join(__dirname, '../.env');
-      let envContent = fs.readFileSync(envPath, 'utf8');
-      
-      if (envContent.includes('TELEGRAM_SESSION=')) {
-        envContent = envContent.replace(/TELEGRAM_SESSION=.*/, `TELEGRAM_SESSION=${result.sessionString}`);
-      } else {
-        envContent += `\nTELEGRAM_SESSION=${result.sessionString}\n`;
-      }
-      
-      fs.writeFileSync(envPath, envContent);
-      console.log('✅ Session string saved to .env file');
-    } catch (error) {
-      console.error('Failed to save session to .env:', error);
-    }
+    // Save session string to database (secure, not exposed to frontend)
+    await saveTelegramSession(result.sessionString);
+    // Reinitialize Telegram client with new session
+    await initializeTelegram();
   }
-  res.json(result);
+  // Don't expose sessionString to frontend - remove it from response
+  const { sessionString, ...safeResult } = result;
+  res.json(safeResult);
 });
 
 app.post('/api/auth/password', async (req, res) => {
@@ -385,26 +381,16 @@ app.post('/api/auth/password', async (req, res) => {
   console.log(`[AUTH] Password submission for session ${sessionId}`);
   const result = await submitPassword(sessionId, password);
   console.log(`[AUTH] Password result:`, result.success ? 'SUCCESS' : `FAILED: ${result.error}`);
-  
+
   if (result.success && result.sessionString) {
-    // Save session string to .env file
-    try {
-      const envPath = path.join(__dirname, '../.env');
-      let envContent = fs.readFileSync(envPath, 'utf8');
-      
-      if (envContent.includes('TELEGRAM_SESSION=')) {
-        envContent = envContent.replace(/TELEGRAM_SESSION=.*/, `TELEGRAM_SESSION=${result.sessionString}`);
-      } else {
-        envContent += `\nTELEGRAM_SESSION=${result.sessionString}\n`;
-      }
-      
-      fs.writeFileSync(envPath, envContent);
-      console.log('✅ Session string saved to .env file');
-    } catch (error) {
-      console.error('Failed to save session to .env:', error);
-    }
+    // Save session string to database (secure, not exposed to frontend)
+    await saveTelegramSession(result.sessionString);
+    // Reinitialize Telegram client with new session
+    await initializeTelegram();
   }
-  res.json(result);
+  // Don't expose sessionString to frontend - remove it from response
+  const { sessionString, ...safeResult } = result;
+  res.json(safeResult);
 });
 
 // Serve auth page
